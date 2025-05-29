@@ -1,0 +1,51 @@
+# pyproject.toml
+[build-system]
+requires = ["poetry-core>=1.2.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "fastapi-githubapp"
+version = "1.0.0"
+description = "FastAPI extension for rapid GitHub App development"
+readme = "README.md"
+authors = ["primetheus <865381+primetheus@users.noreply.github.com>"]
+license = "MIT"
+homepage = "https://github.com/primetheus/fastapi-githubapp"
+repository = "https://github.com/primetheus/fastapi-githubapp"
+keywords = ["fastapi", "github", "app"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Framework :: FastAPI",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent"
+]
+
+# point Poetry at our src/ layout
+packages = [
+  { include = "githubapp", from = "src" }
+]
+
+# Tell Poetry to include README and LICENSE in your sdist:
+include = ["README.md", "LICENSE"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+fastapi = ">=0.95.0"
+uvicorn = { version = ">=0.22.0", extras = ["standard"] }
+ghapi = ">=1.0.0"
+pyjwt = { version = ">=2.8.0", extras = ["crypto"] }
+requests = "*"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+pytest-mock = "*"
+isort = "*"
+black = "*"
+pre-commit = "*"
+pylint = "*"
+seed-isort-config = "*"
+green = "*"
+tox = "*"
+tox-gh-actions = "*"
+responses = "*"
+python-semantic-release = "^10.0.2"

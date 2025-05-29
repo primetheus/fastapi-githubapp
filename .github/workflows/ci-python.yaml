@@ -1,0 +1,42 @@
+---
+name: 'CI :: Unittest :: App'
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python_version:
+          - 3.9
+          - 3.10
+          - 3.11
+          - 3.12
+          - 3.13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python_version }}
+
+      - run: pip install --no-cache-dir poetry
+      - run: poetry install --no-cache --no-ansi
+      - run: poetry run pytest
+        env:
+          GITHUBAPP_ID: 123456
+          GITHUBAPP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nkey-data\n-----END RSA PRIVATE KEY-----"
+          GITHUBAPP_WEBHOOK_SECRET: super-secret-webhook-secret
+          GITHUBAPP_WEBHOOK_PATH: /webhooks/github/
