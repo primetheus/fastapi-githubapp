@@ -54,10 +54,10 @@ This will make your FastAPI application run in debug mode. This means that, as y
 Once that is in place, run your github app
 
 ```bash
-pipenv run uvicorn app:app --host=0.0.0.0 --port=5005 --reload
+uvicorn app:app --host 0.0.0.0 --port 5005 --reload --workers 1
 ```
 
-Now, you can send requests! The port is 5005 by default but that can also be overridden. Check `pipenv run uvicorn app:app --help` for more details. Anyway! Now, on to sending test payloads!
+Now, you can send requests! The port is 5005 by default but that can also be overridden. Check `uvicorn app:app --help` for more details. Anyway! Now, on to sending test payloads!
 
 ```bash
 curl -H "X-GitHub-Event: <your_event>" -H "Content-Type: application/json" -X POST -d @./path/to/payload.json http://localhost:5005

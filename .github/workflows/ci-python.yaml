@@ -17,18 +17,14 @@ jobs:
   run-tests:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python_version:
-          - 3.9
-          - 3.10
-          - 3.11
-          - 3.12
-          - 3.13
+        python_version: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
 
@@ -40,3 +36,4 @@ jobs:
           GITHUBAPP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nkey-data\n-----END RSA PRIVATE KEY-----"
           GITHUBAPP_WEBHOOK_SECRET: super-secret-webhook-secret
           GITHUBAPP_WEBHOOK_PATH: /webhooks/github/
+
