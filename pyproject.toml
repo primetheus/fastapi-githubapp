@@ -49,3 +49,10 @@ tox = "*"
 tox-gh-actions = "*"
 responses = "*"
 python-semantic-release = "^10.0.2"
+
+[tool.semantic_release]
+branch = "main"
+tag_format = "v{version}"
+version_variable = "pyproject.toml:tool.poetry.version"
+upload_to_github = true
+upload_to_pypi = true

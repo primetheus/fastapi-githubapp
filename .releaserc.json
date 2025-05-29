@@ -4,11 +4,13 @@
   ],
   "tag_format": "v${version}",
   "plugins": [
-    "@semantic-release/commit-analyzer",
-    "@semantic-release/release-notes-generator",
-    "@semantic-release/changelog",
-    "@semantic-release/github",
-    "semantic-release-pypi",
+    "semantic_release.plugins.commit_analyzer",
+    "semantic_release.plugins.release_notes_generator",
+    "semantic_release.plugins.changelog",
+    "semantic_release.plugins.bump_version",
+    "semantic_release.plugins.git",
+    "semantic_release.plugins.github",
+    "semantic_release.plugins.pypi"
     [
       "@semantic-release/git",
       {
