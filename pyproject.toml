@@ -5,7 +5,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "fastapi-githubapp"
-version = "0.1.1"
+version = "0.1.2"
 description = "FastAPI extension for rapid GitHub App development"
 readme = "README.md"
 authors = ["primetheus <865381+primetheus@users.noreply.github.com>"]
@@ -48,6 +48,7 @@ green = "*"
 tox = "*"
 tox-gh-actions = "*"
 responses = "*"
+httpx = "*"
 python-semantic-release = "^10.0.2"
 
 [tool.semantic_release]
@@ -56,3 +57,13 @@ tag_format = "v{version}"
 version_variable = "pyproject.toml:tool.poetry.version"
 upload_to_github = true
 upload_to_pypi = true
+
+[tool.pytest.ini_options]
+# run tests in the "tests" folder
+testpaths = ["tests"]
+# add your src/ tree so "import githubapp" works
+pythonpath = ["src"]
+# pick up only files named test_*.py
+python_files = ["test_*.py"]
+# shorten output, show extra summary info for skips/fails
+addopts = "-q --disable-warnings --strict-markers"
