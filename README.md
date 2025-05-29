@@ -6,12 +6,6 @@ GitHub Apps help automate GitHub workflows. Examples include preventing merging 
 
 ## Getting Started
 
-### Installation
-
-To install FastAPI-GitHubApp:
-
-This project is not currently published in any package indexes, such as pypi. To install, simply run `pipenv install -e .`.
-
 ### Create GitHub App
 
 Follow GitHub's docs on [creating a github app](https://developer.github.com/apps/building-github-apps/creating-a-github-app/).
