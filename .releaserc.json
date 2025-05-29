@@ -2,6 +2,7 @@
   "branch": "main",
   "tag_format": "v{version}",
   "version_variable": "pyproject.toml:tool.poetry.version",
+  "initial_version": "1.0.0",
   "upload_to_github": true,
   "upload_to_pypi": true,
   "plugins": [
