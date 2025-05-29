@@ -1,24 +1,32 @@
 {
-  "branches": [
-    "main"
-  ],
-  "tag_format": "v${version}",
+  "branch": "main",
+  "tag_format": "v{version}",
+  "version_variable": "pyproject.toml:tool.poetry.version",
+  "upload_to_github": true,
+  "upload_to_pypi": true,
   "plugins": [
     "semantic_release.plugins.commit_analyzer",
     "semantic_release.plugins.release_notes_generator",
     "semantic_release.plugins.changelog",
     "semantic_release.plugins.bump_version",
-    "semantic_release.plugins.git",
-    "semantic_release.plugins.github",
-    "semantic_release.plugins.pypi"
     [
-      "@semantic-release/git",
+      "semantic_release.plugins.git",
       {
-        "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
+        "message": "chore(release): {new_version} [skip ci]\n\n{changelog}",
         "assets": [
           "CHANGELOG.md",
           "pyproject.toml"
         ]
+      }
+    ],
+    "semantic_release.plugins.github",
+    [
+      "semantic_release.plugins.pypi",
+      {
+        "username": "__token__",
+        "password": "${PYPI_TOKEN}",
+        "repository_url": "https://upload.pypi.org/legacy/",
+        "build_command": "poetry build"
       }
     ]
   ]
