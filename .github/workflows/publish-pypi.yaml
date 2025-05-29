@@ -1,8 +1,10 @@
 name: 📦 Release
 
 on:
+  #release:
+  #  types: [ released ]
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -10,12 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     # don't re‐trigger on the [skip ci] bump+tag commit
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    permissions:
+      id-token: write
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
       - name: Set up Python  
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
