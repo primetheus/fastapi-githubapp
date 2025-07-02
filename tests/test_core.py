@@ -421,6 +421,37 @@ class TestGitHubAppWebhookHandling:
             assert data["status"] == STATUS_FUNC_CALLED
             assert "test_handler" in data["calls"]
 
+    def test_handle_request_call_async_hook_function(self):
+        app = FastAPI()
+        github_app = GitHubApp(
+            app,
+            github_app_id=123,
+            github_app_key=b"test_key",
+            github_app_secret=False,  # Disable signature verification for testing
+        )
+        github_app.init_app(app)
+
+        @github_app.on("issues.opened")
+        async def async_test_handler():
+            return "handled"
+
+        with TestClient(app) as client:
+            response = client.post(
+                "/",
+                json={
+                    "action": "opened",
+                    "installation": {"id": 123},
+                    "issue": {"number": 1},
+                },
+                headers={
+                    "Content-Type": "application/json",
+                    "X-GitHub-Event": "issues",
+                },
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == STATUS_FUNC_CALLED
+            assert "async_test_handler" in data["calls"]
 
 class TestGitHubAppWebhookSignatureVerification:
     def test_signature_verification_disabled(self):
