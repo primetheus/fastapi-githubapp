@@ -5,6 +5,7 @@ import time
 import hmac
 import hashlib
 import requests
+import inspect
 from fastapi import FastAPI, APIRouter, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from ghapi.all import GhApi
@@ -395,7 +396,7 @@ class GitHubApp:
         if functions_to_call:
             for function in functions_to_call:
                 try:
-                    result = function()
+                    result = await function() if inspect.iscoroutinefunction(function) else function()
                 except Exception as e:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
