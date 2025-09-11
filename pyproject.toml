@@ -5,14 +5,23 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "fastapi-githubapp"
-version = "0.1.3"
+version = "0.2.0"
 description = "FastAPI extension for rapid GitHub App development"
 readme = "README.md"
 authors = ["primetheus <865381+primetheus@users.noreply.github.com>"]
 license = "MIT"
 homepage = "https://github.com/primetheus/fastapi-githubapp"
 repository = "https://github.com/primetheus/fastapi-githubapp"
-keywords = ["fastapi", "github", "app"]
+keywords = [
+  "fastapi",
+  "github",
+  "app",
+  "oauth2",
+  "oauth",
+  "probot",
+  "githubapp",
+  "github-app"
+]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Framework :: FastAPI",
@@ -34,7 +43,7 @@ fastapi = ">=0.95.0"
 uvicorn = { version = ">=0.22.0", extras = ["standard"] }
 ghapi = ">=1.0.0"
 pyjwt = { version = ">=2.8.0", extras = ["crypto"] }
-requests = "*"
+httpx = ">=0.28.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
@@ -47,8 +56,7 @@ seed-isort-config = "*"
 green = "*"
 tox = "*"
 tox-gh-actions = "*"
-responses = "*"
-httpx = "*"
+respx = ">=0.21.0"
 python-semantic-release = "^10.0.2"
 
 [tool.semantic_release]

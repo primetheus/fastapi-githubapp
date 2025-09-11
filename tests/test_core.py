@@ -210,7 +210,7 @@ class TestGitHubAppJWT:
 
 
 class TestGitHubAppAccessToken:
-    @patch("githubapp.core.requests.post")
+    @patch("githubapp.core.httpx.post")
     @patch.object(GitHubApp, "_create_jwt", return_value="test_jwt")
     def test_get_access_token_success(self, mock_jwt, mock_post):
         mock_response = Mock()
@@ -228,7 +228,7 @@ class TestGitHubAppAccessToken:
         assert result.token == "test_token"
         assert result.expires_at == "2023-01-01T00:00:00Z"
 
-    @patch("githubapp.core.requests.post")
+    @patch("githubapp.core.httpx.post")
     @patch.object(GitHubApp, "_create_jwt", return_value="test_jwt")
     def test_get_access_token_with_user_id(self, mock_jwt, mock_post):
         mock_response = Mock()
@@ -246,7 +246,7 @@ class TestGitHubAppAccessToken:
         call_args = mock_post.call_args
         assert call_args[1]["json"] == {"user_id": 789}
 
-    @patch("githubapp.core.requests.post")
+    @patch("githubapp.core.httpx.post")
     @patch.object(GitHubApp, "_create_jwt", return_value="test_jwt")
     def test_get_access_token_forbidden(self, mock_jwt, mock_post):
         mock_response = Mock()
@@ -261,7 +261,7 @@ class TestGitHubAppAccessToken:
 
         assert exc_info.value.status == 403
 
-    @patch("githubapp.core.requests.post")
+    @patch("githubapp.core.httpx.post")
     @patch.object(GitHubApp, "_create_jwt", return_value="test_jwt")
     def test_get_access_token_not_found(self, mock_jwt, mock_post):
         mock_response = Mock()
@@ -278,7 +278,7 @@ class TestGitHubAppAccessToken:
 
 
 class TestGitHubAppListInstallations:
-    @patch("githubapp.core.requests.get")
+    @patch("githubapp.core.httpx.get")
     @patch.object(GitHubApp, "_create_jwt", return_value="test_jwt")
     def test_list_installations_success(self, mock_jwt, mock_get):
         mock_response = Mock()
@@ -292,7 +292,7 @@ class TestGitHubAppListInstallations:
         assert result == [{"id": 1}, {"id": 2}]
         mock_get.assert_called_once()
 
-    @patch("githubapp.core.requests.get")
+    @patch("githubapp.core.httpx.get")
     @patch.object(GitHubApp, "_create_jwt", return_value="test_jwt")
     def test_list_installations_with_pagination(self, mock_jwt, mock_get):
         mock_response = Mock()
@@ -306,7 +306,7 @@ class TestGitHubAppListInstallations:
         call_args = mock_get.call_args
         assert call_args[1]["params"] == {"page": 2, "per_page": 50}
 
-    @patch("githubapp.core.requests.get")
+    @patch("githubapp.core.httpx.get")
     @patch.object(GitHubApp, "_create_jwt", return_value="test_jwt")
     def test_list_installations_unauthorized(self, mock_jwt, mock_get):
         mock_response = Mock()
