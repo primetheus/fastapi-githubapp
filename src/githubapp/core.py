@@ -4,13 +4,16 @@ import logging
 import time
 import hmac
 import hashlib
-import requests
+import httpx
 import inspect
-from fastapi import FastAPI, APIRouter, Request, HTTPException, status
+from fastapi import FastAPI, APIRouter, Request, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
 from ghapi.all import GhApi
 from os import environ
 import jwt
+from .oauth import GitHubOAuth2
+from .session import SessionManager
+from contextlib import asynccontextmanager
 
 
 LOG = logging.getLogger(__name__)
@@ -95,6 +98,14 @@ class GitHubApp:
         github_app_secret: bytes = None,
         github_app_url: str = None,
         github_app_route: str = "/",
+        # OAuth2 (optional)
+        oauth_client_id: str = None,
+        oauth_client_secret: str = None,
+        oauth_redirect_uri: str = None,
+        oauth_scopes: list = None,
+        oauth_routes_prefix: str = "/auth/github",
+        enable_oauth: bool = None,
+        oauth_session_secret: str = None,
     ):
         self._hook_mappings = {}
         self._access_token = None
@@ -103,7 +114,26 @@ class GitHubApp:
         self.key = github_app_key
         self.secret = github_app_secret
         self.router = APIRouter()
+        self._initialized = False
+        self._webhook_route = github_app_route or "/"
+        # OAuth2 setup (gated)
+        self.oauth = None
+        self._enable_oauth = False
+        self._oauth_routes_prefix = oauth_routes_prefix
+        self._session_mgr = None
+        if oauth_client_id and oauth_client_secret:
+            self.oauth = GitHubOAuth2(
+                client_id=oauth_client_id,
+                client_secret=oauth_client_secret,
+                redirect_uri=oauth_redirect_uri,
+                scopes=oauth_scopes,
+            )
+            self._enable_oauth = enable_oauth if enable_oauth is not None else True
+            if oauth_session_secret:
+                self._session_mgr = SessionManager(oauth_session_secret)
+
         if app is not None:
+            # Auto-wire on construction; subsequent explicit init_app calls will no-op
             self.init_app(app, route=github_app_route)
 
     @staticmethod
@@ -168,14 +198,25 @@ class GitHubApp:
             Path used for GitHub hook requests as a string.
             Default: '/'
         """
+        # Idempotent setup: avoid mounting more than once
+        if self._initialized:
+            LOG.debug("GitHubApp.init_app called more than once; ignoring subsequent call")
+            return
+
         # Register router endpoint for GitHub webhook
+        self._webhook_route = route or self._webhook_route or "/"
+        self.router.post(self._webhook_route)(self._handle_request)
         app.include_router(self.router)
-        self.router.post(route)(self._handle_request)
         # copy config from FastAPI app
         # ensure app has config dict (for backward compatibility)
         if not hasattr(app, "config"):
             app.config = {}
         self.config = app.config
+
+        # Honor base URL from config (e.g., GitHub Enterprise), if provided
+        cfg_url = self.config.get("GITHUBAPP_URL")
+        if cfg_url:
+            self.base_url = cfg_url
 
         # Set config values from constructor parameters if they were provided
         if self.id is not None:
@@ -185,6 +226,97 @@ class GitHubApp:
         if self.secret is not None:
             self.config["GITHUBAPP_WEBHOOK_SECRET"] = self.secret
 
+        # Mount OAuth2 routes only if enabled and fully configured (session secret)
+        if self._enable_oauth and self.oauth and self._session_mgr:
+            self._setup_oauth_routes(app)
+
+        self._initialized = True
+
+    def _setup_oauth_routes(self, app: FastAPI):
+        prefix = self._oauth_routes_prefix or "/auth/github"
+        router = APIRouter()
+
+        @router.get("/login")
+        async def oauth_login(redirect_to: str = None, scopes: str = None):
+            scope_list = scopes.split(",") if scopes else None
+            url = self.oauth.generate_auth_url(scopes=scope_list)
+            return JSONResponse({"auth_url": url})
+
+        @router.get("/callback")
+        async def oauth_callback(code: str = None, state: str = None, error: str = None):
+            if error:
+                raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
+            if not code:
+                raise HTTPException(status_code=400, detail="Missing authorization code")
+            try:
+                token = await self.oauth.exchange_code_for_token(code, state)
+                user = await self.oauth.get_user_info(token["access_token"])
+            except ValueError as ve:
+                # For now, surface as 500 to match existing expectations
+                raise HTTPException(status_code=500, detail=str(ve))
+            except Exception as ex:
+                # Surface upstream failures as 500 in this phase
+                raise HTTPException(status_code=500, detail=str(ex))
+            session_token = self._session_mgr.create_session_token(user)
+            return JSONResponse({"user": user, "session_token": session_token})
+
+        @router.post("/logout")
+        async def oauth_logout():
+            # Stateless JWTs: clients drop the token; server may add blacklist if desired.
+            return {"status": "logged_out"}
+
+        @router.get("/user")
+        async def oauth_user(current=Depends(self.get_current_user)):
+            return current
+
+        app.include_router(router, prefix=prefix, tags=["oauth2"])
+        # Ensure OAuth2 http client is closed via lifespan (no deprecated on_event)
+        self._install_lifespan_cleanup(app)
+
+    def _install_lifespan_cleanup(self, app: FastAPI):
+        """Install a lifespan context that closes shared resources on shutdown.
+
+        This chains any existing lifespan_context defined on the app's router
+        to avoid clobbering user-defined lifespan behavior.
+        """
+        existing_lifespan = getattr(app.router, "lifespan_context", None)
+
+        @asynccontextmanager
+        async def lifespan(ap: FastAPI):
+            if callable(existing_lifespan):
+                # Chain existing lifespan
+                async with existing_lifespan(ap) as state:
+                    try:
+                        yield state
+                    finally:
+                        if self.oauth and hasattr(self.oauth, "aclose"):
+                            await self.oauth.aclose()
+            else:
+                try:
+                    yield
+                finally:
+                    if self.oauth and hasattr(self.oauth, "aclose"):
+                        await self.oauth.aclose()
+
+        app.router.lifespan_context = lifespan
+
+    def get_current_user(self, request: Request):
+        if not self._session_mgr:
+            raise HTTPException(status_code=401, detail="OAuth2 not configured")
+        # Bearer token support
+        auth = request.headers.get("Authorization", "")
+        token = None
+        if auth.lower().startswith("bearer "):
+            token = auth.split(" ", 1)[1]
+        if not token:
+            token = request.cookies.get("session_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Missing session token")
+        try:
+            return self._session_mgr.verify_session_token(token)
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=str(e))
+
     @property
     def installation_token(self):
         return self._access_token
@@ -192,7 +324,13 @@ class GitHubApp:
     def client(self, installation_id: int = None):
         """GitHub client authenticated as GitHub app installation"""
         if installation_id is None:
-            installation_id = self.payload["installation"]["id"]
+            try:
+                installation_id = self.payload["installation"]["id"]
+            except Exception:
+                raise GitHubAppError(
+                    message="Missing installation id; provide installation_id or call within a webhook context",
+                    status=400,
+                )
         token = self.get_access_token(installation_id).token
         return GhApi(token=token)
 
@@ -219,10 +357,8 @@ class GitHubApp:
         :param installation_id: int
         :return: :class:`github.InstallationAuthorization.InstallationAuthorization`
         """
-        body = {}
-        if user_id:
-            body = {"user_id": user_id}
-        response = requests.post(
+        body = {"user_id": user_id} if user_id else {}
+        response = httpx.post(
             f"{self.base_url}/app/installations/{installation_id}/access_tokens",
             headers={
                 "Authorization": f"Bearer {self._create_jwt()}",
@@ -241,7 +377,11 @@ class GitHubApp:
             )
         elif response.status_code == 404:
             raise GithubAppUnkownObject(status=response.status_code, data=response.text)
-        raise Exception(status=response.status_code, data=response.text)
+        raise GitHubAppError(
+            message="Failed to create installation access token",
+            status=response.status_code,
+            data=response.text,
+        )
 
     def list_installations(self, per_page=30, page=1):
         """
@@ -250,7 +390,7 @@ class GitHubApp:
         """
         params = {"page": page, "per_page": per_page}
 
-        response = requests.get(
+        response = httpx.get(
             f"{self.base_url}/app/installations",
             headers={
                 "Authorization": f"Bearer {self._create_jwt()}",
@@ -269,7 +409,11 @@ class GitHubApp:
             )
         elif response.status_code == 404:
             raise GithubAppUnkownObject(status=response.status_code, data=response.text)
-        raise Exception(status=response.status_code, data=response.text)
+        raise GitHubAppError(
+            message="Failed to list installations",
+            status=response.status_code,
+            data=response.text,
+        )
 
     def on(self, event_action):
         """Decorator routes a GitHub hook to the wrapped function.
@@ -394,9 +538,15 @@ class GitHubApp:
                 functions_to_call += self._hook_mappings[event_action]
 
         if functions_to_call:
+            import asyncio
+
             for function in functions_to_call:
                 try:
-                    result = await function() if inspect.iscoroutinefunction(function) else function()
+                    if inspect.iscoroutinefunction(function):
+                        result = await function()
+                    else:
+                        loop = asyncio.get_running_loop()
+                        result = await loop.run_in_executor(None, function)
                 except Exception as e:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)

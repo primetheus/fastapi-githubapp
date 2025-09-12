@@ -4,17 +4,18 @@ from githubapp import GitHubApp
 
 app = FastAPI()
 
-# build the GitHubApp object (no `app` passed here!)
+# Build the GitHubApp object; constructor will auto-wire routes idempotently
+def _env_bytes(name: str):
+    val = os.getenv(name)
+    return val.encode() if isinstance(val, str) else val
+
 github_app = GitHubApp(
     app,
-    github_app_id=int(os.getenv("GITHUBAPP_ID")),
-    github_app_key=os.getenv("GITHUBAPP_PRIVATE_KEY").encode(),
-    github_app_secret=os.getenv("GITHUBAPP_WEBHOOK_SECRET").encode(),
-    github_app_route=os.getenv("GITHUBAPP_WEBHOOK_PATH"),
+    github_app_id=int(os.getenv("GITHUBAPP_ID", "0")) or None,
+    github_app_key=_env_bytes("GITHUBAPP_PRIVATE_KEY"),
+    github_app_secret=_env_bytes("GITHUBAPP_WEBHOOK_SECRET"),
+    github_app_route=os.getenv("GITHUBAPP_WEBHOOK_PATH", "/"),
 )
-
-# wires up the POST /webhooks/github/ endpoint
-github_app.init_app(app, route=os.getenv("GITHUBAPP_WEBHOOK_PATH"))
 
 
 @app.get("/health")
