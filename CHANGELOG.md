@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restructured samples into numbered progression
 - Updated README with detailed OAuth2 and rate limiting documentation
 - Consistent issue auto-closing across all samples
+- Default webhook path changed from `/` to `/webhooks/github/`
 
 ### Removed
 - Deprecated cruel_closer and oauth2_example samples
@@ -26,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking Changes
 - OAuth2 routes now require oauth_session_secret parameter
 - Rate limiting parameters added to GitHubApp constructor
+- Default webhook path changed from `/` to `/webhooks/github/` - update your GitHub App webhook URL configuration
 
 ## [0.2.0] - 2025-09-11
 

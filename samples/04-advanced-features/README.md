@@ -16,7 +16,7 @@ This example demonstrates advanced GitHub App features including rate limiting, 
 
 Create a GitHub App with these settings:
 - **Homepage URL**: `http://localhost:8000`
-- **Webhook URL**: `http://localhost:8000/webhooks/github`
+- **Webhook URL**: `http://localhost:8000/webhooks/github/`
 
 Required permissions:
 - **Issues**: Write (to close issues and add comments)

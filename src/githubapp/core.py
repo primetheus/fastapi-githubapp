@@ -177,7 +177,7 @@ class GitHubApp:
         github_app_key: bytes = None,
         github_app_secret: bytes = None,
         github_app_url: str = None,
-        github_app_route: str = "/",
+        github_app_route: str = "/webhooks/github/",
         # OAuth2 (optional)
         oauth_client_id: str = None,
         oauth_client_secret: str = None,
@@ -198,7 +198,7 @@ class GitHubApp:
         self.secret = github_app_secret
         self.router = APIRouter()
         self._initialized = False
-        self._webhook_route = github_app_route or "/"
+        self._webhook_route = github_app_route or "/webhooks/github/"
         # OAuth2 setup (moved to init_app to support env vars)
         self.oauth = None
         self._enable_oauth = False
@@ -214,7 +214,7 @@ class GitHubApp:
         self._enable_oauth_param = enable_oauth
 
         # Rate limit configuration
-        self._rate_limit_retries = max(0, rate_limit_retries or 0)
+        self._rate_limit_retries = max(0, rate_limit_retries if rate_limit_retries is not None else 2)
         self._rate_limit_max_sleep = max(0, rate_limit_max_sleep or 60)
 
         if app is not None:
@@ -338,7 +338,7 @@ class GitHubApp:
         `GITHUBAPP_WEBHOOK_PATH`:
 
             Path used for GitHub hook requests as a string.
-            Default: '/'
+            Default: '/webhooks/github/'
         """
         # Idempotent setup: avoid mounting more than once
         if self._initialized:
@@ -348,7 +348,7 @@ class GitHubApp:
             return
 
         # Register router endpoint for GitHub webhook
-        self._webhook_route = route or self._webhook_route or "/"
+        self._webhook_route = route or self._webhook_route or "/webhooks/github/"
         self.router.post(self._webhook_route)(self._handle_request)
         app.include_router(self.router)
         # copy config from FastAPI app

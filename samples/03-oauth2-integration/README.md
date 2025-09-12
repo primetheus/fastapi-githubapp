@@ -16,7 +16,7 @@ This example demonstrates OAuth2 authentication with GitHub Apps and issue manag
 
 Create a GitHub App with these settings:
 - **Homepage URL**: `http://localhost:8000`
-- **Webhook URL**: `http://localhost:8000/webhooks/github`
+- **Webhook URL**: `http://localhost:8000/webhooks/github/`
 - **Authorization callback URL**: `http://localhost:8000/auth/github/callback`
 
 Required permissions:

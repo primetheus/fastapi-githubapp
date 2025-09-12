@@ -40,7 +40,7 @@ The above function will do `stuff here` for _every_ `issues` event received. Thi
 
 Inside the function, you can access the received request via the conveniently named `request` variable. You can access its payload by simply getting it: `request.payload`
 
-You can find a complete example (containing this cruel_closer function), in the samples folder of this repo. It is a fully functioning FastAPI Github App.
+You can find examples in the samples folder of this repo. The [samples](./samples/) include fully functioning FastAPI GitHub Apps demonstrating different features.
 
 #### Run it locally
 
@@ -60,14 +60,12 @@ uvicorn app:app --host 0.0.0.0 --port 5005 --reload --workers 1
 Now, you can send requests! The port is 5005 by default but that can also be overridden. Check `uvicorn app:app --help` for more details. Anyway! Now, on to sending test payloads!
 
 ```bash
-curl -H "X-GitHub-Event: <your_event>" -H "Content-Type: application/json" -X POST -d @./path/to/payload.json http://localhost:5005
+curl -H "X-GitHub-Event: <your_event>" -H "Content-Type: application/json" -X POST -d @./path/to/payload.json http://localhost:5005/webhooks/github/
 ```
 
 #### Install your GitHub App
 
 **Settings** > **Applications** > **Configure**
-
-> If you were to install the cruel closer app, any repositories that you give the GitHub app access to will cruelly close all new issues, be careful.
 
 #### Deploy your GitHub App
 
@@ -77,14 +75,13 @@ Bear in mind that you will need to run the app _somewhere_. It is possible, and 
 
 ### `GitHubApp` Instance Attributes
 
-`payload`: In the context of a hook request, a Python dict representing the hook payload (raises a `RuntimeError`
-outside a hook context).
+`payload`: In the context of a webhook request, a Python dict representing the hook payload (raises a `GitHubAppError` outside a webhook context).
 
 `installation_token`: The token used to authenticate as the app installation. This can be used to call api's not supported by `GhApi` like [Github's GraphQL API](https://docs.github.com/en/graphql/reference)
 
 ### `GithubApp` Instance Methods
 
-`client`: a [GhApi](https://ghapi.fast.ai/) client authenticated as the app installation (raises a `RuntimeError` inside a hook context without a valid request)
+`client`: a [GhApi](https://ghapi.fast.ai/) client authenticated as the app installation (raises a `GitHubAppError` outside a webhook context without a valid installation)
 
 ## Rate Limiting
 
@@ -158,7 +155,7 @@ FastAPI-GitHubApp includes built-in OAuth2 support for user authentication and a
 
 ### Setup
 
-OAuth2 is enabled when you provide both `oauth_client_id` and `oauth_client_secret`. The `oauth_session_secret` is **required** for session management:
+OAuth2 is enabled when you provide both `oauth_client_id` and `oauth_client_secret` (via constructor parameters or environment variables). The `oauth_session_secret` is **required** for session management:
 
 ```python
 from githubapp import GitHubApp
@@ -168,7 +165,7 @@ github_app = GitHubApp(
     github_app_id=12345,
     github_app_key=private_key,
     github_app_secret=webhook_secret,
-    # OAuth2 configuration - all required for OAuth2 to work
+    # OAuth2 configuration - required for OAuth2 to work
     oauth_client_id="your_oauth_client_id",
     oauth_client_secret="your_oauth_client_secret", 
     oauth_session_secret="your-secret-key-for-jwt",  # Required!
@@ -179,6 +176,8 @@ github_app = GitHubApp(
     enable_oauth=True,  # Default: True when client_id/secret provided
 )
 ```
+
+Alternatively, use environment variables (see Environment Variables section below):
 
 ### OAuth2 Routes
 
@@ -331,18 +330,14 @@ Environment variables use the `GITHUBAPP_OAUTH_` prefix (see Configuration table
 | `GITHUBAPP_ENABLE_OAUTH` | | `True` | Enable/disable OAuth2 routes when fully configured |
 | `GITHUBAPP_OAUTH_ROUTES_PREFIX` | | `/auth/github` | OAuth2 routes prefix |
 
-You can find an example on how to init all these config variables in the [cruel_closer sample app](./samples/cruel_closer)
+You can find an example on how to init all these config variables in the [basic webhook sample app](./samples/01-basic-webhook)
 
 #### OAuth2 Example
 
-The [oauth2_example](./samples/oauth2_example) demonstrates GitHub OAuth2 authentication with web interface, protected routes, and session management. It shows two approaches:
+The [OAuth2 integration sample](./samples/03-oauth2-integration) demonstrates GitHub OAuth2 authentication with web interface, protected routes, and session management. It shows two approaches:
 
 - **Environment-only configuration** (recommended): Load all settings from environment variables
 - **Constructor parameters**: Pass OAuth2 settings explicitly to GitHubApp
-
-#### Cruel Closer
-
-The cruel-closer sample app will use information of the received payload (which is received every time an issue is opened), will find said issue and **close it** without regard.
 
 ### Inspiration
 This was inspired by the following projects:
