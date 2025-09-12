@@ -453,6 +453,7 @@ class TestGitHubAppWebhookHandling:
             assert data["status"] == STATUS_FUNC_CALLED
             assert "async_test_handler" in data["calls"]
 
+
 class TestGitHubAppWebhookSignatureVerification:
     def test_signature_verification_disabled(self):
         app = FastAPI()

@@ -14,7 +14,9 @@ class SessionManager:
         self.secret_key = secret_key
         self.algorithm = algorithm
 
-    def create_session_token(self, user: Dict[str, Any], *, expires_in_seconds: int = 86400) -> str:
+    def create_session_token(
+        self, user: Dict[str, Any], *, expires_in_seconds: int = 86400
+    ) -> str:
         now = datetime.now(tz=timezone.utc)
         payload = {
             "sub": str(user.get("id")),

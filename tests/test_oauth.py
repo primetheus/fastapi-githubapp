@@ -49,23 +49,31 @@ def test_oauth_callback_and_user(app_with_oauth):
 
         # 2) Mock GitHub endpoints used by OAuth
         token_route = respx.post("https://github.com/login/oauth/access_token").mock(
-            return_value=httpx.Response(200, json={
-                "access_token": "token123",
-                "token_type": "bearer",
-                "scope": "user:email read:user",
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "access_token": "token123",
+                    "token_type": "bearer",
+                    "scope": "user:email read:user",
+                },
+            )
         )
         user_route = respx.get("https://api.github.com/user").mock(
-            return_value=httpx.Response(200, json={
-                "id": 42,
-                "login": "octocat",
-                "name": "The Octocat",
-                "email": "octo@example.com",
-                "avatar_url": "https://avatars.githubusercontent.com/u/42",
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": 42,
+                    "login": "octocat",
+                    "name": "The Octocat",
+                    "email": "octo@example.com",
+                    "avatar_url": "https://avatars.githubusercontent.com/u/42",
+                },
+            )
         )
         emails_route = respx.get("https://api.github.com/user/emails").mock(
-            return_value=httpx.Response(200, json=[{"email": "octo@example.com", "primary": True}])
+            return_value=httpx.Response(
+                200, json=[{"email": "octo@example.com", "primary": True}]
+            )
         )
 
         # 3) Do callback
@@ -82,7 +90,9 @@ def test_oauth_callback_and_user(app_with_oauth):
 
         # 4) Use the session token to call /user
         token = body["session_token"]
-        me = client.get("/auth/github/user", headers={"Authorization": f"Bearer {token}"})
+        me = client.get(
+            "/auth/github/user", headers={"Authorization": f"Bearer {token}"}
+        )
         assert me.status_code == 200
         claims = me.json()
         assert claims["login"] == "octocat"
