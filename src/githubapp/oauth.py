@@ -80,7 +80,9 @@ class GitHubOAuth2:
         }
         return f"{self.base_url}/login/oauth/authorize?{urlencode(params)}"
 
-    async def exchange_code_for_token(self, code: str, state: Optional[str] = None) -> Dict[str, Any]:
+    async def exchange_code_for_token(
+        self, code: str, state: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Exchange authorization code for access token.
 
         Returns token data as a dict: { access_token, token_type, scope, ... }
@@ -95,7 +97,11 @@ class GitHubOAuth2:
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "code": code,
-                "redirect_uri": (self._state_store.get(state, {})).get("redirect_uri") if state else self.redirect_uri,
+                "redirect_uri": (
+                    (self._state_store.get(state, {})).get("redirect_uri")
+                    if state
+                    else self.redirect_uri
+                ),
             },
             headers={"Accept": "application/json"},
         )

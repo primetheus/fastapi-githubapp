@@ -6,6 +6,7 @@ import hmac
 import hashlib
 import httpx
 import inspect
+import functools
 from fastapi import FastAPI, APIRouter, Request, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
 from ghapi.all import GhApi
@@ -62,6 +63,85 @@ class GithubAppUnkownObject(Exception):
         super().__init__(self.message)
 
 
+class RateLimitedGhApi:
+    """Wrapper for GhApi that adds automatic rate limit handling to all method calls."""
+
+    def __init__(self, ghapi_instance, github_app_instance):
+        self._ghapi = ghapi_instance
+        self._github_app = github_app_instance
+
+    def __getattr__(self, name):
+        """Intercept all attribute access and wrap callable methods with rate limiting."""
+        attr = getattr(self._ghapi, name)
+
+        if callable(attr):
+
+            @functools.wraps(attr)
+            def wrapper(*args, **kwargs):
+                return self._github_app.retry_with_rate_limit(attr, *args, **kwargs)
+
+            return wrapper
+        else:
+            # For non-callable attributes, return as-is
+            return attr
+
+
+def with_rate_limit_handling(github_app):
+    """Decorator that enables automatic rate limit handling for all GhApi client calls in webhook handlers.
+
+    Usage:
+        @github_app.on('issues.opened')
+        @with_rate_limit_handling(github_app)
+        def handle_issue(payload):
+            client = github_app.get_client()
+            # All client calls automatically have rate limit handling
+            client.issues.create_comment(...)
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Store original client method
+            original_client = github_app.client
+            original_get_client = getattr(github_app, "get_client", None)
+
+            # Replace client methods with rate-limited versions
+            def rate_limited_client(installation_id=None):
+                ghapi_instance = original_client(installation_id)
+                return RateLimitedGhApi(ghapi_instance, github_app)
+
+            github_app.client = rate_limited_client
+            if original_get_client:
+                github_app.get_client = rate_limited_client
+
+            try:
+                return func(*args, **kwargs)
+            finally:
+                # Restore original methods
+                github_app.client = original_client
+                if original_get_client:
+                    github_app.get_client = original_get_client
+
+        return wrapper
+
+    return decorator
+
+
+class GitHubRateLimitError(Exception):
+    def __init__(
+        self,
+        message="GitHub rate limit exceeded",
+        status=None,
+        data=None,
+        rate_limit_info=None,
+    ):
+        self.message = message
+        self.status = status
+        self.data = data
+        self.rate_limit_info = rate_limit_info or {}
+        super().__init__(self.message)
+
+
 class InstallationAuthorization:
     def __init__(self, token: str, expires_at: str = None):
         self.token = token
@@ -97,7 +177,7 @@ class GitHubApp:
         github_app_key: bytes = None,
         github_app_secret: bytes = None,
         github_app_url: str = None,
-        github_app_route: str = "/",
+        github_app_route: str = "/webhooks/github/",
         # OAuth2 (optional)
         oauth_client_id: str = None,
         oauth_client_secret: str = None,
@@ -106,6 +186,9 @@ class GitHubApp:
         oauth_routes_prefix: str = "/auth/github",
         enable_oauth: bool = None,
         oauth_session_secret: str = None,
+        # Rate limit handling (optional)
+        rate_limit_retries: int = 2,
+        rate_limit_max_sleep: int = 60,
     ):
         self._hook_mappings = {}
         self._access_token = None
@@ -115,22 +198,24 @@ class GitHubApp:
         self.secret = github_app_secret
         self.router = APIRouter()
         self._initialized = False
-        self._webhook_route = github_app_route or "/"
-        # OAuth2 setup (gated)
+        self._webhook_route = github_app_route or "/webhooks/github/"
+        # OAuth2 setup (moved to init_app to support env vars)
         self.oauth = None
         self._enable_oauth = False
         self._oauth_routes_prefix = oauth_routes_prefix
         self._session_mgr = None
-        if oauth_client_id and oauth_client_secret:
-            self.oauth = GitHubOAuth2(
-                client_id=oauth_client_id,
-                client_secret=oauth_client_secret,
-                redirect_uri=oauth_redirect_uri,
-                scopes=oauth_scopes,
-            )
-            self._enable_oauth = enable_oauth if enable_oauth is not None else True
-            if oauth_session_secret:
-                self._session_mgr = SessionManager(oauth_session_secret)
+
+        # Store OAuth2 constructor parameters for later use in init_app
+        self._oauth_client_id = oauth_client_id
+        self._oauth_client_secret = oauth_client_secret
+        self._oauth_redirect_uri = oauth_redirect_uri
+        self._oauth_scopes = oauth_scopes
+        self._oauth_session_secret = oauth_session_secret
+        self._enable_oauth_param = enable_oauth
+
+        # Rate limit configuration
+        self._rate_limit_retries = max(0, rate_limit_retries if rate_limit_retries is not None else 2)
+        self._rate_limit_max_sleep = max(0, rate_limit_max_sleep or 60)
 
         if app is not None:
             # Auto-wire on construction; subsequent explicit init_app calls will no-op
@@ -167,6 +252,63 @@ class GitHubApp:
         ):
             app.config["GITHUBAPP_WEBHOOK_PATH"] = environ["GITHUBAPP_WEBHOOK_PATH"]
 
+        # OAuth2 configuration (optional)
+        if (
+            "GITHUBAPP_OAUTH_CLIENT_ID" in environ
+            and "GITHUBAPP_OAUTH_CLIENT_ID" not in app.config
+        ):
+            app.config["GITHUBAPP_OAUTH_CLIENT_ID"] = environ[
+                "GITHUBAPP_OAUTH_CLIENT_ID"
+            ]
+
+        if (
+            "GITHUBAPP_OAUTH_CLIENT_SECRET" in environ
+            and "GITHUBAPP_OAUTH_CLIENT_SECRET" not in app.config
+        ):
+            app.config["GITHUBAPP_OAUTH_CLIENT_SECRET"] = environ[
+                "GITHUBAPP_OAUTH_CLIENT_SECRET"
+            ]
+
+        if (
+            "GITHUBAPP_OAUTH_SESSION_SECRET" in environ
+            and "GITHUBAPP_OAUTH_SESSION_SECRET" not in app.config
+        ):
+            app.config["GITHUBAPP_OAUTH_SESSION_SECRET"] = environ[
+                "GITHUBAPP_OAUTH_SESSION_SECRET"
+            ]
+
+        if (
+            "GITHUBAPP_OAUTH_REDIRECT_URI" in environ
+            and "GITHUBAPP_OAUTH_REDIRECT_URI" not in app.config
+        ):
+            app.config["GITHUBAPP_OAUTH_REDIRECT_URI"] = environ[
+                "GITHUBAPP_OAUTH_REDIRECT_URI"
+            ]
+
+        if (
+            "GITHUBAPP_OAUTH_SCOPES" in environ
+            and "GITHUBAPP_OAUTH_SCOPES" not in app.config
+        ):
+            app.config["GITHUBAPP_OAUTH_SCOPES"] = environ[
+                "GITHUBAPP_OAUTH_SCOPES"
+            ].split(",")
+
+        if (
+            "GITHUBAPP_ENABLE_OAUTH" in environ
+            and "GITHUBAPP_ENABLE_OAUTH" not in app.config
+        ):
+            app.config["GITHUBAPP_ENABLE_OAUTH"] = environ[
+                "GITHUBAPP_ENABLE_OAUTH"
+            ].lower() in ("true", "1", "yes")
+
+        if (
+            "GITHUBAPP_OAUTH_ROUTES_PREFIX" in environ
+            and "GITHUBAPP_OAUTH_ROUTES_PREFIX" not in app.config
+        ):
+            app.config["GITHUBAPP_OAUTH_ROUTES_PREFIX"] = environ[
+                "GITHUBAPP_OAUTH_ROUTES_PREFIX"
+            ]
+
     def init_app(self, app: FastAPI, *, route: str = "/"):
         """Initializes GitHubApp app by setting configuration variables.
 
@@ -196,15 +338,17 @@ class GitHubApp:
         `GITHUBAPP_WEBHOOK_PATH`:
 
             Path used for GitHub hook requests as a string.
-            Default: '/'
+            Default: '/webhooks/github/'
         """
         # Idempotent setup: avoid mounting more than once
         if self._initialized:
-            LOG.debug("GitHubApp.init_app called more than once; ignoring subsequent call")
+            LOG.debug(
+                "GitHubApp.init_app called more than once; ignoring subsequent call"
+            )
             return
 
         # Register router endpoint for GitHub webhook
-        self._webhook_route = route or self._webhook_route or "/"
+        self._webhook_route = route or self._webhook_route or "/webhooks/github/"
         self.router.post(self._webhook_route)(self._handle_request)
         app.include_router(self.router)
         # copy config from FastAPI app
@@ -226,6 +370,39 @@ class GitHubApp:
         if self.secret is not None:
             self.config["GITHUBAPP_WEBHOOK_SECRET"] = self.secret
 
+        # Setup OAuth2 using constructor parameters or environment variables
+        oauth_client_id = self._oauth_client_id or self.config.get(
+            "GITHUBAPP_OAUTH_CLIENT_ID"
+        )
+        oauth_client_secret = self._oauth_client_secret or self.config.get(
+            "GITHUBAPP_OAUTH_CLIENT_SECRET"
+        )
+        oauth_session_secret = self._oauth_session_secret or self.config.get(
+            "GITHUBAPP_OAUTH_SESSION_SECRET"
+        )
+        oauth_redirect_uri = self._oauth_redirect_uri or self.config.get(
+            "GITHUBAPP_OAUTH_REDIRECT_URI"
+        )
+        oauth_scopes = self._oauth_scopes or self.config.get("GITHUBAPP_OAUTH_SCOPES")
+        enable_oauth = self._enable_oauth_param
+        if enable_oauth is None:
+            enable_oauth = self.config.get("GITHUBAPP_ENABLE_OAUTH", True)
+        oauth_routes_prefix = self._oauth_routes_prefix or self.config.get(
+            "GITHUBAPP_OAUTH_ROUTES_PREFIX", "/auth/github"
+        )
+
+        if oauth_client_id and oauth_client_secret:
+            self.oauth = GitHubOAuth2(
+                client_id=oauth_client_id,
+                client_secret=oauth_client_secret,
+                redirect_uri=oauth_redirect_uri,
+                scopes=oauth_scopes,
+            )
+            self._enable_oauth = enable_oauth
+            self._oauth_routes_prefix = oauth_routes_prefix
+            if oauth_session_secret:
+                self._session_mgr = SessionManager(oauth_session_secret)
+
         # Mount OAuth2 routes only if enabled and fully configured (session secret)
         if self._enable_oauth and self.oauth and self._session_mgr:
             self._setup_oauth_routes(app)
@@ -243,11 +420,15 @@ class GitHubApp:
             return JSONResponse({"auth_url": url})
 
         @router.get("/callback")
-        async def oauth_callback(code: str = None, state: str = None, error: str = None):
+        async def oauth_callback(
+            code: str = None, state: str = None, error: str = None
+        ):
             if error:
                 raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
             if not code:
-                raise HTTPException(status_code=400, detail="Missing authorization code")
+                raise HTTPException(
+                    status_code=400, detail="Missing authorization code"
+                )
             try:
                 token = await self.oauth.exchange_code_for_token(code, state)
                 user = await self.oauth.get_user_info(token["access_token"])
@@ -334,6 +515,59 @@ class GitHubApp:
         token = self.get_access_token(installation_id).token
         return GhApi(token=token)
 
+    def get_client(self, installation_id: int = None):
+        """Alias for client() method for consistency with decorator usage"""
+        return self.client(installation_id)
+
+    def retry_with_rate_limit(self, func, *args, **kwargs):
+        """Execute a function with automatic rate limit retry handling.
+
+        This method provides the same rate limiting logic used internally
+        by GitHubApp for external GhApi client calls.
+        """
+        for attempt in range(self._rate_limit_retries + 1):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                # Check if this is a GitHub API rate limit error
+                if hasattr(e, "response"):
+                    response = e.response
+                elif hasattr(e, "args") and len(e.args) > 0:
+                    # Try to extract response from exception message/args
+                    # This handles different exception formats from ghapi
+                    response = None
+                    if hasattr(e, "code") and e.code in [429, 403]:
+                        # Create a mock response object for rate limit detection
+                        class MockResponse:
+                            def __init__(self, status_code, headers=None):
+                                self.status_code = status_code
+                                self.headers = headers or {}
+
+                        response = MockResponse(e.code, getattr(e, "headers", {}))
+                else:
+                    response = None
+
+                # Check if this is a rate limit error
+                if response and self._is_rate_limited(response):
+                    if attempt < self._rate_limit_retries:
+                        sleep_time = self._calculate_retry_delay(response, attempt)
+                        if sleep_time <= self._rate_limit_max_sleep:
+                            time.sleep(sleep_time)
+                            continue
+                    # Final attempt or sleep time too long, re-raise with context
+                    rate_info = (
+                        self._extract_rate_limit_info(response) if response else {}
+                    )
+                    raise GitHubRateLimitError(
+                        message=f"Rate limit exceeded in client call: {func.__name__}",
+                        status=getattr(response, "status_code", None),
+                        data=str(e),
+                        rate_limit_info=rate_info,
+                    ) from e
+
+                # Not a rate limit error, re-raise immediately
+                raise
+
     def _create_jwt(self, expiration=60):
         """
         Creates a signed JWT, valid for 60 seconds by default.
@@ -358,30 +592,55 @@ class GitHubApp:
         :return: :class:`github.InstallationAuthorization.InstallationAuthorization`
         """
         body = {"user_id": user_id} if user_id else {}
-        response = httpx.post(
-            f"{self.base_url}/app/installations/{installation_id}/access_tokens",
-            headers={
-                "Authorization": f"Bearer {self._create_jwt()}",
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "FastAPI-GithubApp/Python",
-            },
-            json=body,
-        )
-        if response.status_code == 201:
-            return InstallationAuthorization(
-                token=response.json()["token"], expires_at=response.json()["expires_at"]
+
+        for attempt in range(self._rate_limit_retries + 1):
+            response = httpx.post(
+                f"{self.base_url}/app/installations/{installation_id}/access_tokens",
+                headers={
+                    "Authorization": f"Bearer {self._create_jwt()}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "FastAPI-GithubApp/Python",
+                },
+                json=body,
             )
-        elif response.status_code == 403:
-            raise GitHubAppBadCredentials(
-                status=response.status_code, data=response.text
+
+            # Check for rate limiting
+            if self._is_rate_limited(response):
+                if attempt < self._rate_limit_retries:
+                    sleep_time = self._calculate_retry_delay(response, attempt)
+                    if sleep_time <= self._rate_limit_max_sleep:
+                        time.sleep(sleep_time)
+                        continue
+                # Final attempt or sleep time too long, raise error
+                rate_info = self._extract_rate_limit_info(response)
+                raise GitHubRateLimitError(
+                    message="Rate limit exceeded for installation access token",
+                    status=response.status_code,
+                    data=response.text,
+                    rate_limit_info=rate_info,
+                )
+
+            # Process successful or non-rate-limited error responses
+            if response.status_code == 201:
+                return InstallationAuthorization(
+                    token=response.json()["token"],
+                    expires_at=response.json()["expires_at"],
+                )
+            elif response.status_code == 403:
+                raise GitHubAppBadCredentials(
+                    status=response.status_code, data=response.text
+                )
+            elif response.status_code == 404:
+                raise GithubAppUnkownObject(
+                    status=response.status_code, data=response.text
+                )
+
+            # Other errors
+            raise GitHubAppError(
+                message="Failed to create installation access token",
+                status=response.status_code,
+                data=response.text,
             )
-        elif response.status_code == 404:
-            raise GithubAppUnkownObject(status=response.status_code, data=response.text)
-        raise GitHubAppError(
-            message="Failed to create installation access token",
-            status=response.status_code,
-            data=response.text,
-        )
 
     def list_installations(self, per_page=30, page=1):
         """
@@ -390,30 +649,55 @@ class GitHubApp:
         """
         params = {"page": page, "per_page": per_page}
 
-        response = httpx.get(
-            f"{self.base_url}/app/installations",
-            headers={
-                "Authorization": f"Bearer {self._create_jwt()}",
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "FastAPI-GithubApp/python",
-            },
-            params=params,
-        )
-        if response.status_code == 200:
-            return response.json()
-        elif response.status_code == 401:
-            raise GithubUnauthorized(status=response.status_code, data=response.text)
-        elif response.status_code == 403:
-            raise GitHubAppBadCredentials(
-                status=response.status_code, data=response.text
+        for attempt in range(self._rate_limit_retries + 1):
+            response = httpx.get(
+                f"{self.base_url}/app/installations",
+                headers={
+                    "Authorization": f"Bearer {self._create_jwt()}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "FastAPI-GithubApp/python",
+                },
+                params=params,
             )
-        elif response.status_code == 404:
-            raise GithubAppUnkownObject(status=response.status_code, data=response.text)
-        raise GitHubAppError(
-            message="Failed to list installations",
-            status=response.status_code,
-            data=response.text,
-        )
+
+            # Check for rate limiting
+            if self._is_rate_limited(response):
+                if attempt < self._rate_limit_retries:
+                    sleep_time = self._calculate_retry_delay(response, attempt)
+                    if sleep_time <= self._rate_limit_max_sleep:
+                        time.sleep(sleep_time)
+                        continue
+                # Final attempt or sleep time too long, raise error
+                rate_info = self._extract_rate_limit_info(response)
+                raise GitHubRateLimitError(
+                    message="Rate limit exceeded for list installations",
+                    status=response.status_code,
+                    data=response.text,
+                    rate_limit_info=rate_info,
+                )
+
+            # Process successful or non-rate-limited error responses
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 401:
+                raise GithubUnauthorized(
+                    status=response.status_code, data=response.text
+                )
+            elif response.status_code == 403:
+                raise GitHubAppBadCredentials(
+                    status=response.status_code, data=response.text
+                )
+            elif response.status_code == 404:
+                raise GithubAppUnkownObject(
+                    status=response.status_code, data=response.text
+                )
+
+            # Other errors
+            raise GitHubAppError(
+                message="Failed to list installations",
+                status=response.status_code,
+                data=response.text,
+            )
 
     def on(self, event_action):
         """Decorator routes a GitHub hook to the wrapped function.
@@ -559,3 +843,53 @@ class GitHubApp:
         return JSONResponse(
             status_code=status.HTTP_200_OK, content={"status": "MISS", "calls": {}}
         )
+
+    def _is_rate_limited(self, response) -> bool:
+        """Check if response indicates rate limiting based on GitHub docs."""
+        if response.status_code == 429:
+            return True
+        if response.status_code == 403:
+            # Check if it's rate limiting (remaining = 0) vs other 403 errors
+            remaining = response.headers.get("x-ratelimit-remaining")
+            if remaining is not None and str(remaining) == "0":
+                return True
+        return False
+
+    def _extract_rate_limit_info(self, response) -> dict:
+        """Extract rate limit information from response headers."""
+        headers = response.headers
+        return {
+            "limit": headers.get("x-ratelimit-limit"),
+            "remaining": headers.get("x-ratelimit-remaining"),
+            "reset": headers.get("x-ratelimit-reset"),
+            "used": headers.get("x-ratelimit-used"),
+            "resource": headers.get("x-ratelimit-resource"),
+            "retry_after": headers.get("retry-after"),
+        }
+
+    def _calculate_retry_delay(self, response, attempt) -> int:
+        """Calculate delay before retry based on GitHub guidance."""
+        # First, check for Retry-After header (GitHub's explicit guidance)
+        retry_after = response.headers.get("retry-after")
+        if retry_after:
+            try:
+                return int(retry_after)
+            except (ValueError, TypeError):
+                pass
+
+        # For primary rate limits, use x-ratelimit-reset
+        reset_time = response.headers.get("x-ratelimit-reset")
+        if reset_time:
+            try:
+                reset_timestamp = int(reset_time)
+                current_time = int(time.time())
+                wait_time = reset_timestamp - current_time
+                if wait_time > 0:
+                    return wait_time
+            except (ValueError, TypeError):
+                pass
+
+        # For secondary rate limits or when headers are missing,
+        # use exponential backoff starting at 1 minute
+        base_delay = 60  # 1 minute as per GitHub docs for secondary limits
+        return min(base_delay * (2**attempt), self._rate_limit_max_sleep)

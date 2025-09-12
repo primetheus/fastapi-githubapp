@@ -34,7 +34,9 @@ def test_callback_invalid_state_returns_500(app_with_oauth):
     app, _ = app_with_oauth
     with TestClient(app) as client:
         # No prior login; pass a bogus state
-        resp = client.get("/auth/github/callback", params={"code": "abc", "state": "bogus"})
+        resp = client.get(
+            "/auth/github/callback", params={"code": "abc", "state": "bogus"}
+        )
         # Current implementation raises, resulting in 500
         assert resp.status_code == 500
 
@@ -52,7 +54,9 @@ def test_callback_token_exchange_http_error_returns_500(app_with_oauth):
             return_value=httpx.Response(400, json={"error": "bad_verification_code"})
         )
 
-        resp = client.get("/auth/github/callback", params={"code": "abc", "state": state})
+        resp = client.get(
+            "/auth/github/callback", params={"code": "abc", "state": state}
+        )
         assert resp.status_code == 500
 
 
@@ -65,13 +69,18 @@ def test_callback_token_exchange_json_error_returns_500(app_with_oauth):
 
         # Mock GitHub token endpoint to return 200 with error field
         respx.post("https://github.com/login/oauth/access_token").mock(
-            return_value=httpx.Response(200, json={
-                "error": "incorrect_client_credentials",
-                "error_description": "Client authentication failed",
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "error": "incorrect_client_credentials",
+                    "error_description": "Client authentication failed",
+                },
+            )
         )
 
-        resp = client.get("/auth/github/callback", params={"code": "abc", "state": state})
+        resp = client.get(
+            "/auth/github/callback", params={"code": "abc", "state": state}
+        )
         assert resp.status_code == 500
 
 

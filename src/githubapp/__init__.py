@@ -1,6 +1,6 @@
-from .core import GitHubApp
+from .core import GitHubApp, with_rate_limit_handling
 
-__all__ = ["GitHubApp"]
+__all__ = ["GitHubApp", "with_rate_limit_handling"]
 
 # Set default logging handler to avoid "No handler found" warnings.
 import logging
