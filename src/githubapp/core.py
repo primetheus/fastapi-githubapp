@@ -805,9 +805,13 @@ class GitHubApp:
         event = request.headers.get("X-GitHub-Event")
         action = payload.get("action")
         installation = payload.get("installation") or {}
+        sender = payload.get("sender") or {}
+        repository = payload.get("repository") or {}
         self.event = event
         self.action = action
         self.installation_id = installation.get("id")
+        self.sender_login = sender.get("login")
+        self.repository_full_name = repository.get("full_name")
         if not event:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
