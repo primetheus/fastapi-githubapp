@@ -214,7 +214,9 @@ class GitHubApp:
         self._enable_oauth_param = enable_oauth
 
         # Rate limit configuration
-        self._rate_limit_retries = max(0, rate_limit_retries if rate_limit_retries is not None else 2)
+        self._rate_limit_retries = max(
+            0, rate_limit_retries if rate_limit_retries is not None else 2
+        )
         self._rate_limit_max_sleep = max(0, rate_limit_max_sleep or 60)
 
         if app is not None:
@@ -799,8 +801,13 @@ class GitHubApp:
         # validate headers and payload
         payload = await self._extract_payload(request)
         self.payload = payload
+        self.delivery_id = request.headers.get("X-GitHub-Delivery")
         event = request.headers.get("X-GitHub-Event")
         action = payload.get("action")
+        installation = payload.get("installation") or {}
+        self.event = event
+        self.action = action
+        self.installation_id = installation.get("id")
         if not event:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
