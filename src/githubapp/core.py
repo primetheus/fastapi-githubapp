@@ -16,7 +16,6 @@ from .oauth import GitHubOAuth2
 from .session import SessionManager
 from contextlib import asynccontextmanager
 
-
 LOG = logging.getLogger(__name__)
 
 STATUS_FUNC_CALLED = "HIT"

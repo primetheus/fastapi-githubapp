@@ -1,8 +1,7 @@
 import pytest
-import json
 import time
-from unittest.mock import patch, Mock, mock_open
-from fastapi import APIRouter, Request, FastAPI
+from unittest.mock import patch, Mock
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from githubapp import GitHubApp
 from githubapp.core import (
@@ -352,7 +351,7 @@ class TestGitHubAppClient:
 
         github_app = GitHubApp()
         github_app.payload = {"installation": {"id": 456}}
-        result = github_app.client()
+        github_app.client()
 
         mock_get_token.assert_called_once_with(456)
 
@@ -363,27 +362,25 @@ class TestGitHubAppWebhookHandling:
         github_app = GitHubApp(app)
         github_app.init_app(app)
 
-        with TestClient(app) as client:
+        with TestClient(app):
             # simplified; no real assertion here
             pass
 
     def test_handle_request_missing_content_type(self):
         app = FastAPI()
-        github_app = GitHubApp(app)
-        github_app.init_app(app)
+        GitHubApp(app)
 
         with TestClient(app) as client:
-            response = client.post("/", json={"test": "data"})
+            response = client.post("/webhooks/github/", json={"test": "data"})
             assert response.status_code == 400
 
     def test_handle_request_missing_github_event_header(self):
         app = FastAPI()
-        github_app = GitHubApp(app)
-        github_app.init_app(app)
+        GitHubApp(app)
 
         with TestClient(app) as client:
             response = client.post(
-                "/",
+                "/webhooks/github/",
                 json={"installation": {"id": 123}},
                 headers={"Content-Type": "application/json"},
             )
@@ -395,9 +392,8 @@ class TestGitHubAppWebhookHandling:
             app,
             github_app_id=123,
             github_app_key=b"test_key",
-            github_app_secret=False,  # Disable signature verification for testing
+            github_app_secret=False,
         )
-        github_app.init_app(app)
 
         @github_app.on("issues.opened")
         def test_handler():
@@ -405,7 +401,7 @@ class TestGitHubAppWebhookHandling:
 
         with TestClient(app) as client:
             response = client.post(
-                "/",
+                "/webhooks/github/",
                 json={
                     "action": "opened",
                     "installation": {"id": 123},
@@ -427,9 +423,8 @@ class TestGitHubAppWebhookHandling:
             app,
             github_app_id=123,
             github_app_key=b"test_key",
-            github_app_secret=False,  # Disable signature verification for testing
+            github_app_secret=False,
         )
-        github_app.init_app(app)
 
         @github_app.on("issues.opened")
         async def async_test_handler():
@@ -437,7 +432,7 @@ class TestGitHubAppWebhookHandling:
 
         with TestClient(app) as client:
             response = client.post(
-                "/",
+                "/webhooks/github/",
                 json={
                     "action": "opened",
                     "installation": {"id": 123},
@@ -457,25 +452,23 @@ class TestGitHubAppWebhookHandling:
 class TestGitHubAppWebhookSignatureVerification:
     def test_signature_verification_disabled(self):
         app = FastAPI()
-        github_app = GitHubApp(
-            app, github_app_secret=False  # Explicitly disable verification
-        )
-        # Test that webhooks work without signature headers when verification is disabled
+        GitHubApp(app, github_app_secret=False)
+        # Webhooks work without signature headers when verification is disabled
 
     def test_signature_verification_sha256_valid(self):
         app = FastAPI()
-        github_app = GitHubApp(app, github_app_secret=b"test_secret")
-        # Test that valid SHA256 signatures are accepted
+        GitHubApp(app, github_app_secret=b"test_secret")
+        # Valid SHA256 signatures are accepted
 
     def test_signature_verification_sha256_invalid(self):
         app = FastAPI()
-        github_app = GitHubApp(app, github_app_secret=b"test_secret")
-        # Test that invalid SHA256 signatures are rejected
+        GitHubApp(app, github_app_secret=b"test_secret")
+        # Invalid SHA256 signatures are rejected
 
     def test_signature_verification_sha1_fallback(self):
         app = FastAPI()
-        github_app = GitHubApp(app, github_app_secret=b"test_secret")
-        # Test that SHA1 signatures work when SHA256 is not present
+        GitHubApp(app, github_app_secret=b"test_secret")
+        # SHA1 signatures work when SHA256 is not present
 
 
 class TestGitHubAppIntegration:
@@ -483,9 +476,11 @@ class TestGitHubAppIntegration:
         """Test complete webhook handling flow"""
         app = FastAPI()
         github_app = GitHubApp(
-            app, github_app_id=123, github_app_key=b"test_key", github_app_secret=False
+            app,
+            github_app_id=123,
+            github_app_key=b"test_key",
+            github_app_secret=False,
         )
-        github_app.init_app(app)
 
         results = []
 
@@ -501,7 +496,7 @@ class TestGitHubAppIntegration:
 
         with TestClient(app) as client:
             response = client.post(
-                "/",
+                "/webhooks/github/",
                 json={
                     "action": "opened",
                     "installation": {"id": 123},
@@ -523,14 +518,16 @@ class TestGitHubAppIntegration:
     def test_no_matching_handlers(self):
         """Test webhook with no matching handlers"""
         app = FastAPI()
-        github_app = GitHubApp(
-            app, github_app_id=123, github_app_key=b"test_key", github_app_secret=False
+        GitHubApp(
+            app,
+            github_app_id=123,
+            github_app_key=b"test_key",
+            github_app_secret=False,
         )
-        github_app.init_app(app)
 
         with TestClient(app) as client:
             response = client.post(
-                "/",
+                "/webhooks/github/",
                 json={
                     "action": "closed",
                     "installation": {"id": 123},
@@ -551,9 +548,11 @@ class TestGitHubAppIntegration:
         """Test that exceptions in handlers return 500"""
         app = FastAPI()
         github_app = GitHubApp(
-            app, github_app_id=123, github_app_key=b"test_key", github_app_secret=False
+            app,
+            github_app_id=123,
+            github_app_key=b"test_key",
+            github_app_secret=False,
         )
-        github_app.init_app(app)
 
         @github_app.on("issues.opened")
         def failing_handler():
@@ -561,7 +560,7 @@ class TestGitHubAppIntegration:
 
         with TestClient(app) as client:
             response = client.post(
-                "/",
+                "/webhooks/github/",
                 json={
                     "action": "opened",
                     "installation": {"id": 123},

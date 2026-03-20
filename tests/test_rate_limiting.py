@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import time
 from githubapp import GitHubApp, with_rate_limit_handling
 
@@ -133,7 +133,7 @@ class TestRateLimitHandling:
                 client2 = self.app.get_client(123)
 
                 # Both should return the same type of object
-                assert type(client1) == type(client2)
+                assert isinstance(client1, type(client2))
 
     def test_decorator_restores_original_methods(self):
         """Test that the decorator properly restores original methods after execution."""
