@@ -578,7 +578,7 @@ class GitHubApp:
         :return string:
         """
         now = int(time.time())
-        payload = {"iat": now, "exp": now + expiration, "iss": self.id}
+        payload = {"iat": now, "exp": now + expiration, "iss": str(self.id)}
         encrypted = jwt.encode(payload, key=self.key, algorithm="RS256")
 
         if isinstance(encrypted, bytes):
