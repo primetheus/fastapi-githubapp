@@ -576,8 +576,14 @@ class GitHubApp:
         :param expiration: int
         :return string:
         """
+        if self.id is None:
+            raise GitHubAppError(
+                message="GitHub App ID (github_app_id) is not configured; cannot generate JWT.",
+                status=None,
+                data=None,
+            )
         now = int(time.time())
-        payload = {"iat": now, "exp": now + expiration, "iss": self.id}
+        payload = {"iat": now, "exp": now + expiration, "iss": str(self.id)}
         encrypted = jwt.encode(payload, key=self.key, algorithm="RS256")
 
         if isinstance(encrypted, bytes):

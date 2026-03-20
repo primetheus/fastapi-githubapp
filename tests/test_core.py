@@ -202,7 +202,7 @@ class TestGitHubAppJWT:
         github_app = GitHubApp(github_app_id=123, github_app_key=b"test_key")
         github_app._create_jwt(expiration=300)
 
-        expected_payload = {"iat": 1640995200, "exp": 1640995200 + 300, "iss": 123}
+        expected_payload = {"iat": 1640995200, "exp": 1640995200 + 300, "iss": "123"}
         mock_jwt.encode.assert_called_once_with(
             expected_payload, key=b"test_key", algorithm="RS256"
         )
