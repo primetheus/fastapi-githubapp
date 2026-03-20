@@ -133,7 +133,7 @@ class TestRateLimitHandling:
                 client2 = self.app.get_client(123)
 
                 # Both should return the same type of object
-                assert isinstance(client1, type(client2))
+                assert client1.__class__ is client2.__class__
 
     def test_decorator_restores_original_methods(self):
         """Test that the decorator properly restores original methods after execution."""

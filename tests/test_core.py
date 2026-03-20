@@ -357,15 +357,6 @@ class TestGitHubAppClient:
 
 
 class TestGitHubAppWebhookHandling:
-    def test_extract_payload_valid_json(self):
-        app = FastAPI()
-        github_app = GitHubApp(app)
-        github_app.init_app(app)
-
-        with TestClient(app):
-            # simplified; no real assertion here
-            pass
-
     def test_handle_request_missing_content_type(self):
         app = FastAPI()
         GitHubApp(app)
@@ -447,28 +438,6 @@ class TestGitHubAppWebhookHandling:
             data = response.json()
             assert data["status"] == STATUS_FUNC_CALLED
             assert "async_test_handler" in data["calls"]
-
-
-class TestGitHubAppWebhookSignatureVerification:
-    def test_signature_verification_disabled(self):
-        app = FastAPI()
-        GitHubApp(app, github_app_secret=False)
-        # Webhooks work without signature headers when verification is disabled
-
-    def test_signature_verification_sha256_valid(self):
-        app = FastAPI()
-        GitHubApp(app, github_app_secret=b"test_secret")
-        # Valid SHA256 signatures are accepted
-
-    def test_signature_verification_sha256_invalid(self):
-        app = FastAPI()
-        GitHubApp(app, github_app_secret=b"test_secret")
-        # Invalid SHA256 signatures are rejected
-
-    def test_signature_verification_sha1_fallback(self):
-        app = FastAPI()
-        GitHubApp(app, github_app_secret=b"test_secret")
-        # SHA1 signatures work when SHA256 is not present
 
 
 class TestGitHubAppIntegration:
