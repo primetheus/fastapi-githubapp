@@ -1,4 +1,3 @@
-import json
 from urllib.parse import urlparse, parse_qs
 
 import pytest
